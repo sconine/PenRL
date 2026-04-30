@@ -11,3 +11,12 @@ The system will be able get output feedback that is the XY coordinate of the Pen
 
 Lets start with a fairly simple/clean state and once that is working we will add in more real world behaviors for the model to train on.  Please ask questions if you need any clarification before starting to build this project.
 
+
+Commands:
+tensorboard --logdir runs/ppo_pen_balance
+python -m rl.train_ppo       
+./run_eval.sh 
+./run_eval.sh ppo_pen_balance.zip 5    
+ python -m mujoco.viewer   
+./run_eval.sh checkpoints/ppo_pen_balance_10000_steps.zip 3
+
