@@ -1,0 +1,253 @@
+<?xml version='1.0' encoding='utf-8'?>
+<robot name="PModel">
+    <link name="Plate">
+        <inertial>
+            <origin xyz="-0.03754788138796412 0.01150991349419208 0.11858215493264501" rpy="0.0 0.0 0.0" />
+            <mass value="11.56928326224802" />
+            <inertia ixx="0.42236420599790236" iyy="0.24674631383153187" izz="0.46846609766499614" ixy="-0.0002155789022355485" iyz="0.0010705574571508504" ixz="-0.00011153399018874327" />
+        </inertial>
+        <visual name="Plate_visual">
+            <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0" />
+            <geometry>
+                <mesh filename="meshes/Plate.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </visual>
+        <collision name="Plate_collision">
+            <origin xyz="0.0 0.0 0.0" rpy="0.0 0.0 0.0" />
+            <geometry>
+                <mesh filename="meshes/Plate.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+    <link name="Slide">
+        <inertial>
+            <origin xyz="0.2101759010303055 -4.220268230437085e-09 -0.004582939325983075" rpy="-2.4651903288156624e-32 -0.0 2.5068298848805874e-63" />
+            <mass value="0.8078743429754138" />
+            <inertia ixx="0.0001454557619065025" iyy="0.02289734894491685" izz="0.023014012328873172" ixy="-3.56702531457728e-15" iyz="7.453521041581567e-14" ixz="-7.973229210072883e-07" />
+        </inertial>
+        <visual name="Slide_visual">
+            <origin xyz="0.2280571130803945 -0.007248085902775031 0.01818931634365722" rpy="7.957501844957522e-15 1.3877787807813489e-17 1.2490009027032797e-16" />
+            <geometry>
+                <mesh filename="meshes/Slide.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </visual>
+        <collision name="Slide_collision">
+            <origin xyz="0.2280571130803945 -0.007248085902775031 0.01818931634365722" rpy="7.957501844957522e-15 1.3877787807813489e-17 1.2490009027032797e-16" />
+            <geometry>
+                <mesh filename="meshes/Slide.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+    <link name="Trolley">
+        <inertial>
+            <origin xyz="4.339038590650546e-09 -4.288573400845763e-09 0.004475372880728199" rpy="0.0 -0.0 0.0" />
+            <mass value="0.6737833870123419" />
+            <inertia ixx="0.0003863140221181255" iyy="0.0003072785331036695" izz="0.0004919562623250774" ixy="1.0329737584615104e-16" iyz="-3.005917857199182e-13" ixz="-2.519803466033862e-09" />
+        </inertial>
+        <visual name="Trolley_visual">
+            <origin xyz="-0.026818886919610596 -0.007248085902774595 0.015189316343659902" rpy="7.409654487200414e-15 1.3877787807812756e-17 1.2490009027040269e-16" />
+            <geometry>
+                <mesh filename="meshes/Trolley.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </visual>
+        <collision name="Trolley_collision">
+            <origin xyz="-0.026818886919610596 -0.007248085902774595 0.015189316343659902" rpy="7.409654487200414e-15 1.3877787807812756e-17 1.2490009027040269e-16" />
+            <geometry>
+                <mesh filename="meshes/Trolley.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+    <link name="PenTip">
+        <inertial>
+            <origin xyz="4.3385401271578415e-09 -4.19680776575504e-09 0.0006350017563167043" rpy="0.0 -0.0 -5.83407682299482e-62" />
+            <mass value="0.0007103840924338144" />
+            <inertia ixx="4.12360830975378e-09" iyy="4.123609350492998e-09" izz="8.056254576796718e-09" ixy="3.759590436056291e-37" iyz="-4.2264325097156525e-22" ixz="1.6940658945086007e-21" />
+        </inertial>
+        <visual name="PenTip_visual">
+            <origin xyz="0.037461150000002386 -0.00737652130218684 -0.301984441550353" rpy="7.041564729439317e-15 1.5265566588595898e-16 -3.308734648911287e-16" />
+            <geometry>
+                <mesh filename="meshes/PenTip.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </visual>
+        <collision name="PenTip_collision">
+            <origin xyz="0.037461150000002386 -0.00737652130218684 -0.301984441550353" rpy="7.041564729439317e-15 1.5265566588595898e-16 -3.308734648911287e-16" />
+            <geometry>
+                <mesh filename="meshes/PenTip.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+    <link name="Pen">
+        <inertial>
+            <origin xyz="4.339041437262381e-09 -4.196806834277922e-09 0.14012169292155677" rpy="0.0 -0.0 0.0" />
+            <mass value="0.12813970785247497" />
+            <inertia ixx="0.0006539514484837977" iyy="0.0006539514484850302" izz="1.525711179319099e-06" ixy="-2.710505431213761e-20" iyz="5.068645156369733e-18" ixz="5.2475385148298415e-17" />
+        </inertial>
+        <visual name="Pen_visual">
+            <origin xyz="0.037461150000002386 -0.0073765213021867735 -0.03980346155035298" rpy="7.263609334364347e-15 1.5265566588595902e-16 -3.3087346489112867e-16" />
+            <geometry>
+                <mesh filename="meshes/Pen.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </visual>
+        <collision name="Pen_collision">
+            <origin xyz="0.037461150000002386 -0.0073765213021867735 -0.03980346155035298" rpy="7.263609334364347e-15 1.5265566588595902e-16 -3.3087346489112867e-16" />
+            <geometry>
+                <mesh filename="meshes/Pen.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+    <link name="Ring">
+        <inertial>
+            <origin xyz="4.3390381154750915e-09 -0.0635978622868566 0.012712070465507602" rpy="0.0 -0.0 -2.430865342914509e-63" />
+            <mass value="0.47915290579320996" />
+            <inertia ixx="0.0008984468857342607" iyy="0.0009013786324385993" izz="0.0017483247610926814" ixy="3.4043948216044845e-17" iyz="-3.616421205994669e-07" ixz="-1.7222550207397205e-18" />
+        </inertial>
+        <visual name="Ring_visual">
+            <origin xyz="0.03746115 -0.0561161700000021 0.2609052699999996" rpy="-3.141592653589785 -1.540743955509789e-33 9.472278132566588e-48" />
+            <geometry>
+                <mesh filename="meshes/Ring.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </visual>
+        <collision name="Ring_collision_seg_0">
+            <origin xyz="0.045000004339038114 -0.0635978622868566 0.012712070465507602" rpy="0 0 1.57079632679" />
+            <geometry>
+                <box size="0.04 0.010 0.02" />
+            </geometry>
+        </collision>
+        <collision name="Ring_collision_seg_1">
+            <origin xyz="0.03181980948903812 -0.0317780571368566 0.012712070465507602" rpy="0 0 2.35619449019" />
+            <geometry>
+                <box size="0.04 0.010 0.02" />
+            </geometry>
+        </collision>
+        <collision name="Ring_collision_seg_2">
+            <origin xyz="4.3390381154750915e-09 -0.018597862286856595 0.012712070465507602" rpy="0 0 3.14159265359" />
+            <geometry>
+                <box size="0.04 0.010 0.02" />
+            </geometry>
+        </collision>
+        <collision name="Ring_collision_seg_3">
+            <origin xyz="-0.03181980081096188 -0.0317780571368566 0.012712070465507602" rpy="0 0 3.92699081699" />
+            <geometry>
+                <box size="0.04 0.010 0.02" />
+            </geometry>
+        </collision>
+        <collision name="Ring_collision_seg_4">
+            <origin xyz="-0.04499999566096189 -0.0635978622868566 0.012712070465507602" rpy="0 0 4.71238898038" />
+            <geometry>
+                <box size="0.04 0.010 0.02" />
+            </geometry>
+        </collision>
+        <collision name="Ring_collision_seg_5">
+            <origin xyz="-0.03181980081096188 -0.0954176674368566 0.012712070465507602" rpy="0 0 5.49778714378" />
+            <geometry>
+                <box size="0.04 0.010 0.02" />
+            </geometry>
+        </collision>
+        <collision name="Ring_collision_seg_6">
+            <origin xyz="4.3390381154750915e-09 -0.1085978622868566 0.012712070465507602" rpy="0 0 6.28318530718" />
+            <geometry>
+                <box size="0.04 0.010 0.02" />
+            </geometry>
+        </collision>
+        <collision name="Ring_collision_seg_7">
+            <origin xyz="0.03181980948903812 -0.0954176674368566 0.012712070465507602" rpy="0 0 7.06858347058" />
+            <geometry>
+                <box size="0.04 0.010 0.02" />
+            </geometry>
+        </collision>
+    </link>
+    <link name="YBAll">
+        <inertial>
+            <origin xyz="4.339038084388847e-09 4.196805796219394e-09 -0.002146322047854006" rpy="0.0 -0.0 0.0" />
+            <mass value="0.00032512019084985527" />
+            <inertia ixx="5.990931896163034e-10" iyy="5.99093189616621e-10" izz="5.990931896167798e-10" ixy="-2.1599466395941627e-37" iyz="5.29395592033941e-23" ixz="-1.059518666782103e-22" />
+        </inertial>
+        <visual name="YBAll_visual">
+            <origin xyz="0.03746115000000002 0.007383829999999924 0.03980704122401757" rpy="-3.1415926535897913 -3.0184188481996197e-16 -5.970864310086585e-31" />
+            <geometry>
+                <mesh filename="meshes/YBAll.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </visual>
+        <collision name="YBAll_collision">
+            <origin xyz="0.03746115000000002 0.007383829999999924 0.03980704122401757" rpy="-3.1415926535897913 -3.0184188481996197e-16 -5.970864310086585e-31" />
+            <geometry>
+                <mesh filename="meshes/YBAll.stl" scale="0.001 0.001 0.001" />
+            </geometry>
+        </collision>
+    </link>
+    <link name="StepperA">
+        <inertial>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <mass value="0.001" />
+            <inertia ixx="1e-6" iyy="1e-6" izz="1e-6" ixy="0" iyz="0" ixz="0" />
+        </inertial>
+    </link>
+    <link name="StepperB">
+        <inertial>
+            <origin xyz="0 0 0" rpy="0 0 0" />
+            <mass value="0.001" />
+            <inertia ixx="1e-6" iyy="1e-6" izz="1e-6" ixy="0" iyz="0" ixz="0" />
+        </inertial>
+    </link>
+    <joint name="Plate_Slider-7" type="prismatic">
+        <origin xyz="-0.24736115000000386 0.010499831876711354 0.019555270000000197" rpy="-7.853418436398915e-15 -1.3877787807814423e-17 1.1449653519382065e-31" />
+        <parent link="Plate" />
+        <child link="Slide" />
+        <axis xyz="2.1895288505075267e-47 1.0 -2.0957627994126344e-16" />
+        <limit lower="-0.055" upper="0.055" effort="1000000" velocity="1000000" />
+    </joint>
+    <joint name="Slide_Slider-8" type="prismatic">
+        <origin xyz="0.20990000000000006 0.0 0.0029999999999999983" rpy="-5.711034943567233e-15 1.540743955509791e-33 1.0303725202480317e-32" />
+        <parent link="Slide" />
+        <child link="Trolley" />
+        <axis xyz="1.0 3.0333396624122086e-32 3.798154774267918e-18" />
+        <limit lower="-0.055" upper="0.055" effort="1000000" velocity="1000000" />
+    </joint>
+    <joint name="Plate_Rigid-12" type="fixed">
+        <origin xyz="-0.037461150000000706 -0.05300016812328655 0.26090527000000374" rpy="3.141592653589777 -1.3877787807814423e-17 1.1449653519382065e-31" />
+        <parent link="Plate" />
+        <child link="Ring" />
+    </joint>
+    <joint name="Trolley_Revolute-15" type="revolute">
+        <origin xyz="0.0 -9.43689570931383e-17 0.017255500000000003" rpy="-3.1415926535897856 2.1932527634641165e-46 -3.986674984882211e-32" />
+        <parent link="Trolley" />
+        <child link="YBAll" />
+        <axis xyz="1.0 0.0 0.0" />
+        <limit lower="-0.349066" upper="0.349066" effort="1000000" velocity="1000000" />
+    </joint>
+    <joint name="YBAll_Revolute-16" type="revolute">
+        <origin xyz="0.0 0.0 0.0" rpy="3.1415926535897913 -6.030959930087038e-47 -2.956302464634177e-32" />
+        <parent link="YBAll" />
+        <child link="Pen" />
+        <axis xyz="0.0 1.0 0.0" />
+        <limit lower="-0.349066" upper="0.349066" effort="1000000" velocity="1000000" />
+    </joint>
+    <joint name="Pen_Rigid-17" type="fixed">
+        <origin xyz="0.0 0.0 0.26218098" rpy="2.2204460492502894e-16 -2.465190328815662e-32 -2.4147374993963502e-32" />
+        <parent link="Pen" />
+        <child link="PenTip" />
+    </joint>
+    <joint name="StepperA_joint" type="continuous">
+        <origin xyz="0.18 0.18 0.02" rpy="0 0 0" />
+        <parent link="Plate" />
+        <child link="StepperA" />
+        <axis xyz="0 0 1" />
+    </joint>
+    <joint name="StepperB_joint" type="continuous">
+        <origin xyz="-0.18 0.18 0.02" rpy="0 0 0" />
+        <parent link="Plate" />
+        <child link="StepperB" />
+        <axis xyz="0 0 1" />
+    </joint>
+    <!--
+      Motor mixing definition for controller code:
+        k = 0.03839 / (2*pi)  [m/rad]  (38.39 mm travel per motor revolution)
+        x_trolley = -0.5 * k * (thetaA + thetaB)  -> Slide_Slider-8
+        y_slide   = -0.5 * k * (thetaA - thetaB)  -> Plate_Slider-7
+
+      This gives:
+        - A cw, B ccw (equal magnitude): pure -Y slide motion
+        - A cw, B cw  (equal magnitude): pure -X trolley motion
+      URDF cannot natively enforce this 2-motor coupling; apply in your control layer.
+    -->
+</robot>

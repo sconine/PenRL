@@ -1,0 +1,13 @@
+
+
+I'd like to add two stepper motors, A,B into @/Users/stevenconine/Library/Mobile Documents/com~apple~CloudDocs/Documents/Family Share/Steve/ReLearn/CADDump/PModel/PModel.urdf that control the slide and trolley.  When both motors turn in exact opposite directions only the Slide moves (A clockwise, B CounterClock moves slide in -Y Direction).  When both motors turn in the same direction only the Trolley moves (A clockwise, B clockwise moves slide in -X Direction).  Assume one motor rotation coresponds to  38.39mm of linear travel for which ever component is being affected.
+
+
+Now I'd like to use this @PModel/PModel.urdf model and gymnasium to setup a reinforcement learning solution to keeping the pen balanced upright.  
+
+The system will be able to control the two stepper motors, A,B that control the slide and trolley.  When both motors turn in exact opposite directions only the Slide moves (A clockwise, B CounterClock moves slide in -Y Direction).  When both motors turn in the same direction only the Trolley moves (A clockwise, B clockwise moves slide in -X Direction).  Assume one motor rotation coresponds to  38.39mm of linear travel for which ever component is being affected.
+
+The system will be able get output feedback that is the XY coordinate of the PenTip (a component in the model).  The goal is for the system to learn to balance the pen with it pointing straight upward (a 2-axis inverted pendulum type problem).  TO do this I think the reward function should have a benefit to the PenTip being close to the initial position (the reset position when the model is first loaded).  It should probably also have a benefit to limited XY movement between frames of the pen whenever it is close to the target (we don't want to train the system that it can just let the pen drop and while it's XY is stable it hasn't accomplished anything).
+
+Lets start with a fairly simple/clean state and once that is working we will add in more real world behaviors for the model to train on.  Please ask questions if you need any clarification before starting to build this project.
+
