@@ -86,9 +86,14 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
     through obstacles and ignore ring contacts; letting ``mj_step`` integrate under applied forces keeps
     collisions meaningful (consistent with passive MuJoCo viewer behavior).
 
-    Slide and trolley joint limits are fixed symmetrically about **URDF joint zero** via ``model.jnt_range``
-    (default ±2 mm each). Starting pose is clipped into this interval so motion never exceeds it regardless
-    of episode initialization.
+    Carriage motion follows motor mixing from **logical motor shaft angles** tracked in the env; each motor
+    angle is clamped to ``± max_motor_revolutions · 2π`` rad from its episode start (default ±1 revolution).
+    Slide/trolley joint limits are left at **URDF values** (no env override).
+
+    When the trolley wanders beyond ``trolley_recovery_far_m`` from **this episode's** starting XY (stored at
+    reset), reward includes progress toward that start plus a mild penalty for excess displacement. A small
+    **motor activity** bonus and lower action-smoothing penalties encourage varied commands (combine with
+    higher PPO ``ent_coef`` in training).
 
     Tune ``carriage_velocity_kp`` / ``carriage_velocity_kd`` if tracking is too loose or the model oscillates.
 
@@ -114,11 +119,15 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
         reward_slide_decay: float = 4500.0,
         reward_trolley_decay: float = 4500.0,
         reward_align_decay: float = 2.0e8,
-        velocity_xy_penalty: float = 0.06,
-        action_delta_penalty: float = 0.015,
+        velocity_xy_penalty: float = 0.028,
+        action_delta_penalty: float = 0.004,
+        trolley_recovery_far_m: float = 0.005,
+        trolley_recovery_progress_scale: float = 180.0,
+        trolley_far_quadratic_scale: float = 250.0,
+        motor_activity_bonus_scale: float = 0.055,
         success_nominal_m: float = 0.004,
         success_spread_m2: float = 5e-5,
-        max_prismatic_travel_m: float = 0.002,
+        max_motor_revolutions: float = 1.0,
         carriage_velocity_kp: float = 600.0,
         carriage_velocity_kd: float = 35.0,
     ) -> None:
@@ -140,9 +149,14 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
         self.reward_align_decay = float(reward_align_decay)
         self.velocity_xy_penalty = float(velocity_xy_penalty)
         self.action_delta_penalty = float(action_delta_penalty)
+        self.trolley_recovery_far_m = float(trolley_recovery_far_m)
+        self.trolley_recovery_progress_scale = float(trolley_recovery_progress_scale)
+        self.trolley_far_quadratic_scale = float(trolley_far_quadratic_scale)
+        self.motor_activity_bonus_scale = float(motor_activity_bonus_scale)
         self.success_nominal_m = float(success_nominal_m)
         self.success_spread_m2 = float(success_spread_m2)
-        self.max_prismatic_travel_m = float(max_prismatic_travel_m)
+        self.max_motor_revolutions = float(max_motor_revolutions)
+        self.motor_angle_limit_rad = float(max_motor_revolutions) * (2.0 * np.pi)
         self.carriage_velocity_kp = float(carriage_velocity_kp)
         self.carriage_velocity_kd = float(carriage_velocity_kd)
 
@@ -164,21 +178,30 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
         self.slide_dof_adr = int(self.model.jnt_dofadr[self.slide_jid])
         self.trolley_dof_adr = int(self.model.jnt_dofadr[self.trolley_jid])
 
+        self.stepper_a_qadr = self._optional_joint_qpos_adr("StepperA_joint")
+        self.stepper_b_qadr = self._optional_joint_qpos_adr("StepperB_joint")
+
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
-        # XY errors vs nominal (6) + XY velocities for slide / trolley / tip (6).
+        # XY errors vs nominal (6) + velocities (6) + trolley offset from episode start (2).
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(12,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(14,), dtype=np.float32
         )
 
-        self._capture_nominal_xy_refs()
-        self._sync_prismatic_joint_limits()
+        self._motor_theta_a = 0.0
+        self._motor_theta_b = 0.0
 
-    def _sync_prismatic_joint_limits(self) -> None:
-        """Both prismatic joints limited to ±max_prismatic_travel_m about URDF zero (q=0)."""
-        h = self.max_prismatic_travel_m
-        lim = np.array([-h, h], dtype=np.float64)
-        self.model.jnt_range[self.slide_jid] = lim
-        self.model.jnt_range[self.trolley_jid] = lim
+        self._capture_nominal_xy_refs()
+        self._sync_stepper_visual_pose()
+        mujoco.mj_forward(self.model, self.data)
+
+        self._episode_trolley_xy_start = self._trolley_xy().copy()
+        self.prev_episode_trolley_dist = 0.0
+
+    def _optional_joint_qpos_adr(self, joint_name: str) -> int | None:
+        jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
+        if jid < 0:
+            return None
+        return int(self.model.jnt_qposadr[jid])
 
     def _capture_nominal_xy_refs(self) -> None:
         mujoco.mj_resetData(self.model, self.data)
@@ -198,6 +221,13 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
         self.trolley_xy_ref = t
         self.tip_xy_ref = p
         self.spread_ref_sq = _pairwise_xy_sq_sum(s, t, p)
+
+    def _sync_stepper_visual_pose(self) -> None:
+        """Align URDF stepper joint angles with integrated logical motor angles (viewer/debug)."""
+        if self.stepper_a_qadr is not None:
+            self.data.qpos[self.stepper_a_qadr] = self._motor_theta_a
+        if self.stepper_b_qadr is not None:
+            self.data.qpos[self.stepper_b_qadr] = self._motor_theta_b
 
     def _joint_id(self, name: str) -> int:
         jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
@@ -244,6 +274,9 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
         v_trolley = (trolley_xy - self.prev_trolley_xy) * inv_dt / v_scale
         v_tip = (tip_xy - self.prev_tip_xy) * inv_dt / v_scale
 
+        ep_dx = (trolley_xy[0] - self._episode_trolley_xy_start[0]) / pos_scale
+        ep_dy = (trolley_xy[1] - self._episode_trolley_xy_start[1]) / pos_scale
+
         return np.array(
             [
                 e_slide[0],
@@ -258,6 +291,8 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
                 v_trolley[1],
                 v_tip[0],
                 v_tip[1],
+                ep_dx,
+                ep_dy,
             ],
             dtype=np.float32,
         )
@@ -267,11 +302,10 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
         self.step_count = 0
         self.prev_action = np.zeros(2, dtype=np.float64)
         mujoco.mj_resetData(self.model, self.data)
-        self._sync_prismatic_joint_limits()
-        lim = self.max_prismatic_travel_m
-        # Nominal URDF origin q=0 for both prismatic joints; stay inside ±lim if defaults change.
-        self.data.qpos[self.slide_qpos_adr] = float(np.clip(0.0, -lim, lim))
-        self.data.qpos[self.trolley_qpos_adr] = float(np.clip(0.0, -lim, lim))
+        self._motor_theta_a = 0.0
+        self._motor_theta_b = 0.0
+        self.data.qpos[self.slide_qpos_adr] = 0.0
+        self.data.qpos[self.trolley_qpos_adr] = 0.0
         self.data.qvel[self.slide_dof_adr] = 0.0
         self.data.qvel[self.trolley_dof_adr] = 0.0
         for joint_name in ("Trolley_Revolute-15", "YBAll_Revolute-16"):
@@ -282,9 +316,15 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
                     -self.reset_tilt_rad, self.reset_tilt_rad
                 )
         mujoco.mj_forward(self.model, self.data)
+        self._sync_stepper_visual_pose()
+        mujoco.mj_forward(self.model, self.data)
+
+        tw = self._trolley_xy()
+        self._episode_trolley_xy_start = tw.copy()
+        self.prev_episode_trolley_dist = 0.0
 
         self.prev_slide_xy = self._slide_xy()
-        self.prev_trolley_xy = self._trolley_xy()
+        self.prev_trolley_xy = tw.copy()
         self.prev_tip_xy = self._tip_xy()
         return self._obs(), {}
 
@@ -294,8 +334,16 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
         motor_b = float(action[1] * self.max_motor_speed_rad_s)
 
         dt = self.model.opt.timestep
+        lim = self.motor_angle_limit_rad
         for _ in range(self.frame_skip):
-            vx, vy = self.mix.to_linear_xy(motor_a, motor_b)
+            ta_next = float(np.clip(self._motor_theta_a + motor_a * dt, -lim, lim))
+            tb_next = float(np.clip(self._motor_theta_b + motor_b * dt, -lim, lim))
+            eff_a = (ta_next - self._motor_theta_a) / max(dt, 1e-12)
+            eff_b = (tb_next - self._motor_theta_b) / max(dt, 1e-12)
+            self._motor_theta_a = ta_next
+            self._motor_theta_b = tb_next
+
+            vx, vy = self.mix.to_linear_xy(eff_a, eff_b)
             self.data.qfrc_applied[:] = 0.0
             v_slide = float(self.data.qvel[self.slide_dof_adr])
             v_trolley = float(self.data.qvel[self.trolley_dof_adr])
@@ -306,6 +354,9 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
                 vx - v_trolley
             ) - self.carriage_velocity_kd * v_trolley
             mujoco.mj_step(self.model, self.data)
+
+        self._sync_stepper_visual_pose()
+        mujoco.mj_forward(self.model, self.data)
 
         dt_step = dt * self.frame_skip
         slide_xy = self._slide_xy()
@@ -331,6 +382,18 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
             + self.reward_align_scale * float(np.exp(-self.reward_align_decay * spread_delta_sq))
         )
 
+        dist_episode_home = float(np.linalg.norm(trolley_xy - self._episode_trolley_xy_start))
+        reward_recovery = 0.0
+        if dist_episode_home > self.trolley_recovery_far_m:
+            reward_recovery += self.trolley_recovery_progress_scale * max(
+                0.0, self.prev_episode_trolley_dist - dist_episode_home
+            )
+            excess = dist_episode_home - self.trolley_recovery_far_m
+            reward_recovery -= self.trolley_far_quadratic_scale * excess * excess
+        reward += reward_recovery
+
+        reward += self.motor_activity_bonus_scale * float(np.mean(np.abs(action)))
+
         tip_vxy = (tip_xy - self.prev_tip_xy) / max(dt_step, 1e-8)
         tip_speed = float(np.linalg.norm(tip_vxy))
         reward -= self.velocity_xy_penalty * tip_speed
@@ -338,6 +401,8 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
         da = action - self.prev_action
         reward -= self.action_delta_penalty * float(np.dot(da, da))
         self.prev_action = action.copy()
+
+        self.prev_episode_trolley_dist = dist_episode_home
 
         nominal_ok = (
             dist_slide < self.success_nominal_m
@@ -368,6 +433,11 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
             "step_success": step_success,
             "nominal_ok": nominal_ok,
             "spread_ok": spread_ok,
+            "motor_theta_a": self._motor_theta_a,
+            "motor_theta_b": self._motor_theta_b,
+            "motor_angle_limit_rad": self.motor_angle_limit_rad,
+            "trolley_dist_episode_home_m": dist_episode_home,
+            "reward_recovery": reward_recovery,
         }
         return self._obs(), float(reward), terminated, truncated, info
 
