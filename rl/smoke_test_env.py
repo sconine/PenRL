@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 
-from rl.pen_balance_env import TrolleyCircleEnv
+from rl.pen_balance_env import NominalXYAlignEnv
 
 
 def main() -> None:
-    env = TrolleyCircleEnv()
+    env = NominalXYAlignEnv()
     obs, _ = env.reset(seed=0)
-    print("reset obs:", np.round(obs, 5))
+    print("reset obs shape:", obs.shape, "sample:", np.round(obs[:6], 5))
     total = 0.0
     successes = 0
     for i in range(100):
@@ -20,8 +20,8 @@ def main() -> None:
         if (i + 1) % 20 == 0:
             print(
                 f"step={i+1} reward={reward:.4f} "
-                f"track_err_m={info['tracking_error_m']:.5f} "
-                f"radius_err_m={info['radius_error_m']:.5f} "
+                f"slide={info['slide_xy_dist']:.5f} trolley={info['trolley_xy_dist']:.5f} "
+                f"tip={info['tip_xy_dist']:.5f} spreadΔ={info['spread_delta_abs']:.2e} "
                 f"success={info['step_success']}"
             )
         if terminated or truncated:

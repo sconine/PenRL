@@ -8,17 +8,17 @@ import mujoco.viewer
 import numpy as np
 from stable_baselines3 import PPO
 
-from rl.pen_balance_env import TrolleyCircleEnv
+from rl.pen_balance_env import NominalXYAlignEnv
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate trolley circle-tracking policy with live MuJoCo viewer."
+        description="Evaluate nominal XY alignment policy (slide / trolley / pen tip) with MuJoCo viewer."
     )
     parser.add_argument(
         "--model-path",
         type=str,
-        default="ppo_trolley_circle.zip",
+        default="ppo_nominal_xy_align.zip",
         help="Path to Stable-Baselines3 PPO model. If missing, random policy is used.",
     )
     parser.add_argument("--episodes", type=int, default=5, help="Number of evaluation episodes.")
@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    env = TrolleyCircleEnv(max_steps=args.max_steps)
+    env = NominalXYAlignEnv(max_steps=args.max_steps)
     model_path = Path(args.model_path)
     model = PPO.load(model_path) if model_path.exists() else None
     if model is None:
@@ -66,8 +66,8 @@ def main() -> None:
                 print(
                     f"episode={episode_idx} steps={episode_steps} reward={episode_reward:.3f} "
                     f"success_step_fraction={frac:.3f} "
-                    f"last_track_err_m={info['tracking_error_m']:.5f} "
-                    f"last_radius_err_m={info['radius_error_m']:.5f}"
+                    f"slide={info['slide_xy_dist']:.5f} trolley={info['trolley_xy_dist']:.5f} "
+                    f"tip={info['tip_xy_dist']:.5f} spreadΔ={info['spread_delta_abs']:.2e}"
                 )
                 episode_idx += 1
                 if episode_idx > args.episodes:

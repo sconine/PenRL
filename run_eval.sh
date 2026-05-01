@@ -22,7 +22,7 @@ if [[ ! -x ".venv/bin/mjpython" ]]; then
   exit 1
 fi
 
-MODEL_PATH="${1:-ppo_trolley_circle.zip}"
+MODEL_PATH="${1:-ppo_nominal_xy_align.zip}"
 EPISODES="${2:-5}"
 
 exec "$VENV_PY" ".venv/bin/mjpython" -m rl.eval_viewer \

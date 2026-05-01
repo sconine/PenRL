@@ -88,10 +88,11 @@
                 <mesh filename="meshes/Pen.stl" scale="0.001 0.001 0.001" />
             </geometry>
         </visual>
+        <!-- Shaft along Pen +Z: YBAll/Pen joint at link origin (z=0) to Pen/PenTip joint (z=0.26218098) = bottom of PenTip link. -->
         <collision name="Pen_collision">
-            <origin xyz="0.037461150000002386 -0.0073765213021867735 -0.03980346155035298" rpy="7.263609334364347e-15 1.5265566588595902e-16 -3.3087346489112867e-16" />
+            <origin xyz="0 0 0.13109049" rpy="0 0 0" />
             <geometry>
-                <mesh filename="meshes/Pen.stl" scale="0.001 0.001 0.001" />
+                <cylinder radius="0.005" length="0.26218098" />
             </geometry>
         </collision>
     </link>
@@ -107,52 +108,55 @@
                 <mesh filename="meshes/Ring.stl" scale="0.001 0.001 0.001" />
             </geometry>
         </visual>
+        <!-- Octagonal collision proxy; centers on circle dia 0.04 m. Boxes thickened vs scaled-down
+             thin slabs (~4 mm) which tunnel easily under discrete stepping; slight tangential overlap
+             reduces wedge gaps between adjacent segments. -->
         <collision name="Ring_collision_seg_0">
-            <origin xyz="0.045000004339038114 -0.0635978622868566 0.012712070465507602" rpy="0 0 1.57079632679" />
+            <origin xyz="0.020000004339038115 -0.0635978622868566 0.012712070465507602" rpy="0 0 1.57079632679" />
             <geometry>
-                <box size="0.04 0.010 0.02" />
+                <box size="0.022 0.012 0.014" />
             </geometry>
         </collision>
         <collision name="Ring_collision_seg_1">
-            <origin xyz="0.03181980948903812 -0.0317780571368566 0.012712070465507602" rpy="0 0 2.35619449019" />
+            <origin xyz="0.01414213996126034 -0.04945572666463438 0.012712070465507602" rpy="0 0 2.35619449019" />
             <geometry>
-                <box size="0.04 0.010 0.02" />
+                <box size="0.022 0.012 0.014" />
             </geometry>
         </collision>
         <collision name="Ring_collision_seg_2">
-            <origin xyz="4.3390381154750915e-09 -0.018597862286856595 0.012712070465507602" rpy="0 0 3.14159265359" />
+            <origin xyz="4.3390381154750915e-09 -0.043597862286856595 0.012712070465507602" rpy="0 0 3.14159265359" />
             <geometry>
-                <box size="0.04 0.010 0.02" />
+                <box size="0.022 0.012 0.014" />
             </geometry>
         </collision>
         <collision name="Ring_collision_seg_3">
-            <origin xyz="-0.03181980081096188 -0.0317780571368566 0.012712070465507602" rpy="0 0 3.92699081699" />
+            <origin xyz="-0.014142131283184107 -0.04945572666463438 0.012712070465507602" rpy="0 0 3.92699081699" />
             <geometry>
-                <box size="0.04 0.010 0.02" />
+                <box size="0.022 0.012 0.014" />
             </geometry>
         </collision>
         <collision name="Ring_collision_seg_4">
-            <origin xyz="-0.04499999566096189 -0.0635978622868566 0.012712070465507602" rpy="0 0 4.71238898038" />
+            <origin xyz="-0.01999999566096189 -0.0635978622868566 0.012712070465507602" rpy="0 0 4.71238898038" />
             <geometry>
-                <box size="0.04 0.010 0.02" />
+                <box size="0.022 0.012 0.014" />
             </geometry>
         </collision>
         <collision name="Ring_collision_seg_5">
-            <origin xyz="-0.03181980081096188 -0.0954176674368566 0.012712070465507602" rpy="0 0 5.49778714378" />
+            <origin xyz="-0.014142131283184107 -0.07773999790907882 0.012712070465507602" rpy="0 0 5.49778714378" />
             <geometry>
-                <box size="0.04 0.010 0.02" />
+                <box size="0.022 0.012 0.014" />
             </geometry>
         </collision>
         <collision name="Ring_collision_seg_6">
-            <origin xyz="4.3390381154750915e-09 -0.1085978622868566 0.012712070465507602" rpy="0 0 6.28318530718" />
+            <origin xyz="4.3390381154750915e-09 -0.0835978622868566 0.012712070465507602" rpy="0 0 6.28318530718" />
             <geometry>
-                <box size="0.04 0.010 0.02" />
+                <box size="0.022 0.012 0.014" />
             </geometry>
         </collision>
         <collision name="Ring_collision_seg_7">
-            <origin xyz="0.03181980948903812 -0.0954176674368566 0.012712070465507602" rpy="0 0 7.06858347058" />
+            <origin xyz="0.01414213996126034 -0.07773999790907882 0.012712070465507602" rpy="0 0 7.06858347058" />
             <geometry>
-                <box size="0.04 0.010 0.02" />
+                <box size="0.022 0.012 0.014" />
             </geometry>
         </collision>
     </link>
@@ -194,14 +198,14 @@
         <parent link="Plate" />
         <child link="Slide" />
         <axis xyz="2.1895288505075267e-47 1.0 -2.0957627994126344e-16" />
-        <limit lower="-0.055" upper="0.055" effort="1000000" velocity="1000000" />
+        <limit lower="-0.015" upper="0.015" effort="1000000" velocity="1000000" />
     </joint>
     <joint name="Slide_Slider-8" type="prismatic">
         <origin xyz="0.20990000000000006 0.0 0.0029999999999999983" rpy="-5.711034943567233e-15 1.540743955509791e-33 1.0303725202480317e-32" />
         <parent link="Slide" />
         <child link="Trolley" />
         <axis xyz="1.0 3.0333396624122086e-32 3.798154774267918e-18" />
-        <limit lower="-0.055" upper="0.055" effort="1000000" velocity="1000000" />
+        <limit lower="-0.015" upper="0.015" effort="1000000" velocity="1000000" />
     </joint>
     <joint name="Plate_Rigid-12" type="fixed">
         <origin xyz="-0.037461150000000706 -0.05300016812328655 0.26090527000000374" rpy="3.141592653589777 -1.3877787807814423e-17 1.1449653519382065e-31" />
