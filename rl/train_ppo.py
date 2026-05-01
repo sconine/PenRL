@@ -80,7 +80,7 @@ def main() -> None:
         name_prefix="ppo_nominal_xy_align",
     )
     callbacks = CallbackList([AlignHoldCallback(), checkpoint_cb])
-    model.learn(total_timesteps=200_000, callback=callbacks)
+    model.learn(total_timesteps=20_000, callback=callbacks)
     model.save("ppo_nominal_xy_align")
     print("Saved model to ppo_nominal_xy_align.zip")
 

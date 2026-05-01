@@ -32,40 +32,65 @@ def _pairwise_xy_sq_sum(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
 
 
 def _configure_pen_ring_contacts(model: mujoco.MjModel) -> None:
-    """Reduce pen vs ring tunneling: thicker contacts, finer stepping, multi-point CCD when available.
+    """Reduce pen vs ring tunneling: thicker contacts, finer stepping, multi-point CCD, stiff overrides.
 
     Common causes of visually slipping through ring segments:
-    - Discrete simulation steps vs thin box collision (especially after shrinking segment thickness).
-    - Small wedge-shaped gaps between neighboring rotated boxes on an octagonal hull.
+    - Discrete simulation steps vs thin collision geometry.
+    - Wedge-shaped gaps between rotated boxes on a low-count polygonal hull.
+    - Short vertical slab extent vs a tilted pen (misses collision entirely).
     """
 
     opt = model.opt
-    opt.timestep = float(min(opt.timestep, 0.001))
-    opt.iterations = int(max(opt.iterations, 80))
+    opt.timestep = float(min(opt.timestep, 0.0005))
+    opt.iterations = int(max(opt.iterations, 120))
     if hasattr(opt, "ccd_iterations"):
-        opt.ccd_iterations = int(max(int(opt.ccd_iterations), 50))
+        opt.ccd_iterations = int(max(int(opt.ccd_iterations), 80))
 
-    mj_multiccd = getattr(getattr(mujoco, "mjtEnableBit", None), "mjENBL_MULTICCD", None)
+    enable = getattr(mujoco, "mjtEnableBit", None)
+    mj_multiccd = getattr(enable, "mjENBL_MULTICCD", None) if enable is not None else None
+    mj_override = getattr(enable, "mjENBL_OVERRIDE", None) if enable is not None else None
     if mj_multiccd is not None:
         opt.enableflags |= int(mj_multiccd)
     else:
         opt.enableflags |= 1 << 5  # mjENBL_MULTICCD
+    if mj_override is not None:
+        opt.enableflags |= int(mj_override)
+    else:
+        opt.enableflags |= 1 << 0  # mjENBL_OVERRIDE (per-geom solref/solimp)
 
-    ring_margin = 0.002
-    pen_margin = 0.0015
+    ring_margin = 0.0035
+    pen_margin = 0.0025
+    stiff_solref = np.array([0.02, 1.0], dtype=np.float64)
+    stiff_solimp = np.array([0.99, 0.995, 0.001, 0.5, 2.0], dtype=np.float64)
+
     for gid in range(model.ngeom):
         name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, gid) or ""
         if name.startswith("Ring_collision_seg_"):
             model.geom_margin[gid] = max(float(model.geom_margin[gid]), ring_margin)
+            model.geom_gap[gid] = 0.0
+            model.geom_solref[gid, :] = stiff_solref
+            model.geom_solimp[gid, :] = stiff_solimp
+            model.geom_friction[gid, 0] = max(float(model.geom_friction[gid, 0]), 1.0)
         elif name in ("PenTip_collision", "Pen_collision"):
             model.geom_margin[gid] = max(float(model.geom_margin[gid]), pen_margin)
+            model.geom_gap[gid] = 0.0
+            model.geom_solref[gid, :] = stiff_solref
+            model.geom_solimp[gid, :] = stiff_solimp
 
 
 class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
     """Hold slide, trolley, and pen tip near the URDF nominal pose (prismatic + pen joints at zero).
 
-    Slide and trolley prismatic travel are each capped at ``max_prismatic_travel_m`` from joint zero
-    (joints ``Plate_Slider-7`` / ``Slide_Slider-8`` in the URDF; default ±20 mm per axis).
+    Carriage motion uses a **velocity servo** on the two prismatic DOFs (``qfrc_applied``), not direct
+    ``qpos`` integration. Writing slide/trolley positions every step would kinematically drag the pen
+    through obstacles and ignore ring contacts; letting ``mj_step`` integrate under applied forces keeps
+    collisions meaningful (consistent with passive MuJoCo viewer behavior).
+
+    Slide and trolley joint limits are fixed symmetrically about **URDF joint zero** via ``model.jnt_range``
+    (default ±2 mm each). Starting pose is clipped into this interval so motion never exceeds it regardless
+    of episode initialization.
+
+    Tune ``carriage_velocity_kp`` / ``carriage_velocity_kd`` if tracking is too loose or the model oscillates.
 
     Nominal XY references are captured once from MuJoCo with all those joints at zero. Reward encourages
     each body's XY to stay near its reference and the trio's relative XY layout (pairwise spread) to stay
@@ -93,8 +118,9 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
         action_delta_penalty: float = 0.015,
         success_nominal_m: float = 0.004,
         success_spread_m2: float = 5e-5,
-        # ±travel from zero for slide and trolley prismatic joints (meters, each axis).
-        max_prismatic_travel_m: float = 0.02,
+        max_prismatic_travel_m: float = 0.002,
+        carriage_velocity_kp: float = 600.0,
+        carriage_velocity_kd: float = 35.0,
     ) -> None:
         super().__init__()
         self.model = mujoco.MjModel.from_xml_path(str(model_path))
@@ -116,9 +142,9 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
         self.action_delta_penalty = float(action_delta_penalty)
         self.success_nominal_m = float(success_nominal_m)
         self.success_spread_m2 = float(success_spread_m2)
-        lim = float(max_prismatic_travel_m)
-        self.slide_min, self.slide_max = -lim, lim
-        self.trolley_min, self.trolley_max = -lim, lim
+        self.max_prismatic_travel_m = float(max_prismatic_travel_m)
+        self.carriage_velocity_kp = float(carriage_velocity_kp)
+        self.carriage_velocity_kd = float(carriage_velocity_kd)
 
         self.mix = MotorMixing()
         self.step_count = 0
@@ -138,10 +164,6 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
         self.slide_dof_adr = int(self.model.jnt_dofadr[self.slide_jid])
         self.trolley_dof_adr = int(self.model.jnt_dofadr[self.trolley_jid])
 
-        lim_rng = np.array([-lim, lim], dtype=np.float64)
-        self.model.jnt_range[self.slide_jid] = lim_rng
-        self.model.jnt_range[self.trolley_jid] = lim_rng
-
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
         # XY errors vs nominal (6) + XY velocities for slide / trolley / tip (6).
         self.observation_space = spaces.Box(
@@ -149,6 +171,14 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
         )
 
         self._capture_nominal_xy_refs()
+        self._sync_prismatic_joint_limits()
+
+    def _sync_prismatic_joint_limits(self) -> None:
+        """Both prismatic joints limited to ±max_prismatic_travel_m about URDF zero (q=0)."""
+        h = self.max_prismatic_travel_m
+        lim = np.array([-h, h], dtype=np.float64)
+        self.model.jnt_range[self.slide_jid] = lim
+        self.model.jnt_range[self.trolley_jid] = lim
 
     def _capture_nominal_xy_refs(self) -> None:
         mujoco.mj_resetData(self.model, self.data)
@@ -237,8 +267,11 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
         self.step_count = 0
         self.prev_action = np.zeros(2, dtype=np.float64)
         mujoco.mj_resetData(self.model, self.data)
-        self.data.qpos[self.slide_qpos_adr] = 0.0
-        self.data.qpos[self.trolley_qpos_adr] = 0.0
+        self._sync_prismatic_joint_limits()
+        lim = self.max_prismatic_travel_m
+        # Nominal URDF origin q=0 for both prismatic joints; stay inside ±lim if defaults change.
+        self.data.qpos[self.slide_qpos_adr] = float(np.clip(0.0, -lim, lim))
+        self.data.qpos[self.trolley_qpos_adr] = float(np.clip(0.0, -lim, lim))
         self.data.qvel[self.slide_dof_adr] = 0.0
         self.data.qvel[self.trolley_dof_adr] = 0.0
         for joint_name in ("Trolley_Revolute-15", "YBAll_Revolute-16"):
@@ -263,14 +296,15 @@ class NominalXYAlignEnv(gym.Env[np.ndarray, np.ndarray]):
         dt = self.model.opt.timestep
         for _ in range(self.frame_skip):
             vx, vy = self.mix.to_linear_xy(motor_a, motor_b)
-            slide = float(self.data.qpos[self.slide_qpos_adr]) + vy * dt
-            trolley = float(self.data.qpos[self.trolley_qpos_adr]) + vx * dt
-            slide = float(np.clip(slide, self.slide_min, self.slide_max))
-            trolley = float(np.clip(trolley, self.trolley_min, self.trolley_max))
-            self.data.qpos[self.slide_qpos_adr] = slide
-            self.data.qpos[self.trolley_qpos_adr] = trolley
-            self.data.qvel[self.slide_dof_adr] = vy
-            self.data.qvel[self.trolley_dof_adr] = vx
+            self.data.qfrc_applied[:] = 0.0
+            v_slide = float(self.data.qvel[self.slide_dof_adr])
+            v_trolley = float(self.data.qvel[self.trolley_dof_adr])
+            self.data.qfrc_applied[self.slide_dof_adr] = self.carriage_velocity_kp * (
+                vy - v_slide
+            ) - self.carriage_velocity_kd * v_slide
+            self.data.qfrc_applied[self.trolley_dof_adr] = self.carriage_velocity_kp * (
+                vx - v_trolley
+            ) - self.carriage_velocity_kd * v_trolley
             mujoco.mj_step(self.model, self.data)
 
         dt_step = dt * self.frame_skip
