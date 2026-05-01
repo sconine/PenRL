@@ -8,15 +8,17 @@ import mujoco.viewer
 import numpy as np
 from stable_baselines3 import PPO
 
-from rl.pen_balance_env import PenBalanceEnv
+from rl.pen_balance_env import TrolleyCircleEnv
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate pen-balance policy with live MuJoCo viewer.")
+    parser = argparse.ArgumentParser(
+        description="Evaluate trolley circle-tracking policy with live MuJoCo viewer."
+    )
     parser.add_argument(
         "--model-path",
         type=str,
-        default="ppo_pen_balance.zip",
+        default="ppo_trolley_circle.zip",
         help="Path to Stable-Baselines3 PPO model. If missing, random policy is used.",
     )
     parser.add_argument("--episodes", type=int, default=5, help="Number of evaluation episodes.")
@@ -27,7 +29,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    env = PenBalanceEnv(max_steps=args.max_steps)
+    env = TrolleyCircleEnv(max_steps=args.max_steps)
     model_path = Path(args.model_path)
     model = PPO.load(model_path) if model_path.exists() else None
     if model is None:
@@ -39,6 +41,7 @@ def main() -> None:
     episode_idx = 1
     episode_reward = 0.0
     episode_steps = 0
+    episode_success_steps = 0
     dt = env.model.opt.timestep * env.frame_skip
 
     with mujoco.viewer.launch_passive(env.model, env.data) as viewer:
@@ -52,17 +55,19 @@ def main() -> None:
             obs, reward, terminated, truncated, info = env.step(action)
             episode_reward += float(reward)
             episode_steps += 1
+            if info.get("step_success"):
+                episode_success_steps += 1
 
             viewer.sync()
             time.sleep(dt)
 
             if terminated or truncated:
-                tip_xy = np.asarray(info.get("tip_xy", [np.nan, np.nan]), dtype=np.float32)
+                frac = episode_success_steps / max(episode_steps, 1)
                 print(
-                    f"episode={episode_idx} steps={episode_steps} "
-                    f"reward={episode_reward:.3f} tip_xy_dist={info['tip_dist']:.4f} "
-                    f"tip_x={tip_xy[0]:.4f} tip_y={tip_xy[1]:.4f} "
-                    f"origin={info.get('all_at_origin', False)}"
+                    f"episode={episode_idx} steps={episode_steps} reward={episode_reward:.3f} "
+                    f"success_step_fraction={frac:.3f} "
+                    f"last_track_err_m={info['tracking_error_m']:.5f} "
+                    f"last_radius_err_m={info['radius_error_m']:.5f}"
                 )
                 episode_idx += 1
                 if episode_idx > args.episodes:
@@ -70,6 +75,7 @@ def main() -> None:
                 obs, _ = env.reset()
                 episode_reward = 0.0
                 episode_steps = 0
+                episode_success_steps = 0
 
     print("Evaluation ended.")
 

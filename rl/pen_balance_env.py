@@ -22,8 +22,12 @@ class MotorMixing:
         return vx, vy
 
 
-class PenBalanceEnv(gym.Env[np.ndarray, np.ndarray]):
-    """Simple MuJoCo/Gymnasium environment for pen balancing on a 2-axis trolley."""
+class TrolleyCircleEnv(gym.Env[np.ndarray, np.ndarray]):
+    """MuJoCo env: drive slide + trolley so the trolley body tracks a small horizontal circle.
+
+    Reference motion is a point moving CCW on a circle of radius ``circle_radius_m`` centered at the
+    trolley XY position when the episode starts. Reward penalizes Cartesian error to that moving target.
+    """
 
     metadata = {"render_modes": []}
 
@@ -33,24 +37,13 @@ class PenBalanceEnv(gym.Env[np.ndarray, np.ndarray]):
         frame_skip: int = 5,
         max_motor_speed_rad_s: float = 14.0,
         max_steps: int = 600,
-        reset_tilt_rad: float = 0.10,
-        ring_near_m: float = 0.015,
-        ring_touch_m: float = 0.010,
-        target_near_m: float = 0.035,
-        stuck_speed_m_s: float = 0.01,
-        stuck_steps: int = 10,
-        # Reward: Gaussian closeness exp(-decay * dist_xy^2) per component; higher decay = tighter peak.
-        reward_tip_scale: float = 2.0,
-        reward_slide_scale: float = 1.25,
-        reward_trolley_scale: float = 1.25,
-        reward_tip_decay: float = 350.0,
-        reward_slide_decay: float = 4500.0,
-        reward_trolley_decay: float = 4500.0,
-        origin_close_tip_m: float = 0.012,
-        origin_close_slide_m: float = 0.008,
-        origin_close_trolley_m: float = 0.008,
-        origin_all_close_amplify: float = 2.25,
-        velocity_xy_penalty: float = 0.06,
+        circle_radius_m: float = 0.005,
+        circle_omega_rad_s: float = np.pi,
+        track_reward_scale: float = 1.0,
+        radius_shaping_scale: float = 0.35,
+        action_delta_penalty: float = 0.02,
+        success_track_m: float = 0.002,
+        success_radius_m: float = 0.0015,
     ) -> None:
         super().__init__()
         self.model = mujoco.MjModel.from_xml_path(str(model_path))
@@ -58,33 +51,24 @@ class PenBalanceEnv(gym.Env[np.ndarray, np.ndarray]):
         self.frame_skip = frame_skip
         self.max_motor_speed_rad_s = max_motor_speed_rad_s
         self.max_steps = max_steps
-        self.reset_tilt_rad = reset_tilt_rad
-        self.ring_near_m = ring_near_m
-        self.ring_touch_m = ring_touch_m
-        self.target_near_m = target_near_m
-        self.stuck_speed_m_s = stuck_speed_m_s
-        self.stuck_steps = stuck_steps
-        self.reward_tip_scale = reward_tip_scale
-        self.reward_slide_scale = reward_slide_scale
-        self.reward_trolley_scale = reward_trolley_scale
-        self.reward_tip_decay = reward_tip_decay
-        self.reward_slide_decay = reward_slide_decay
-        self.reward_trolley_decay = reward_trolley_decay
-        self.origin_close_tip_m = origin_close_tip_m
-        self.origin_close_slide_m = origin_close_slide_m
-        self.origin_close_trolley_m = origin_close_trolley_m
-        self.origin_all_close_amplify = origin_all_close_amplify
-        self.velocity_xy_penalty = velocity_xy_penalty
+        self.circle_radius_m = float(circle_radius_m)
+        self.circle_omega_rad_s = float(circle_omega_rad_s)
+        self.track_reward_scale = float(track_reward_scale)
+        self.radius_shaping_scale = float(radius_shaping_scale)
+        self.action_delta_penalty = float(action_delta_penalty)
+        self.success_track_m = float(success_track_m)
+        self.success_radius_m = float(success_radius_m)
+
         self.mix = MotorMixing()
         self.step_count = 0
-        self.ring_stuck_counter = 0
+        self.phase = 0.0
+        self.episode_center_xy = np.zeros(2, dtype=np.float64)
+        self.prev_action = np.zeros(2, dtype=np.float64)
+        self.prev_trolley_xy = np.zeros(2, dtype=np.float64)
 
         self.slide_jid = self._joint_id("Plate_Slider-7")
         self.trolley_jid = self._joint_id("Slide_Slider-8")
-        self.pen_tip_gid = self._geom_id_any("PenTip_collision", "Pen_collision")
-        self.slide_bid = self._body_id("Slide")
         self.trolley_bid = self._body_id("Trolley")
-        self.ring_seg_gids = self._ring_segment_geom_ids()
 
         self.slide_qpos_adr = int(self.model.jnt_qposadr[self.slide_jid])
         self.trolley_qpos_adr = int(self.model.jnt_qposadr[self.trolley_jid])
@@ -97,32 +81,13 @@ class PenBalanceEnv(gym.Env[np.ndarray, np.ndarray]):
         self.trolley_min, self.trolley_max = float(trolley_range[0]), float(trolley_range[1])
 
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(2,), dtype=np.float32)
-        # Errors vs nominal URDF XY origins (pen tip geom, Slide/Trolley body COM), tip XY velocity.
+        # rel trolley/center, trolley vel, phase encoding, error to target (all scaled).
         self.observation_space = spaces.Box(
             low=-np.inf, high=np.inf, shape=(8,), dtype=np.float32
         )
 
-        self._capture_nominal_xy_refs()
-
         mujoco.mj_resetData(self.model, self.data)
         mujoco.mj_forward(self.model, self.data)
-        self.prev_tip_xy = self._tip_xy().copy()
-        self.ring_center_xy = self._ring_center_xy()
-
-    def _capture_nominal_xy_refs(self) -> None:
-        """Nominal XY at URDF assembly origin: prismatic joints 0, pen revolute joints 0."""
-        mujoco.mj_resetData(self.model, self.data)
-        self.data.qpos[self.slide_qpos_adr] = 0.0
-        self.data.qpos[self.trolley_qpos_adr] = 0.0
-        for joint_name in ("Trolley_Revolute-15", "YBAll_Revolute-16"):
-            jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
-            if jid >= 0:
-                qadr = int(self.model.jnt_qposadr[jid])
-                self.data.qpos[qadr] = 0.0
-        mujoco.mj_forward(self.model, self.data)
-        self.tip_xy_ref = np.asarray(self.data.geom_xpos[self.pen_tip_gid, :2], dtype=np.float64).copy()
-        self.slide_xy_ref = np.asarray(self.data.xpos[self.slide_bid, :2], dtype=np.float64).copy()
-        self.trolley_xy_ref = np.asarray(self.data.xpos[self.trolley_bid, :2], dtype=np.float64).copy()
 
     def _joint_id(self, name: str) -> int:
         jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, name)
@@ -130,83 +95,58 @@ class PenBalanceEnv(gym.Env[np.ndarray, np.ndarray]):
             raise ValueError(f"Joint '{name}' not found in model.")
         return jid
 
-    def _geom_id_any(self, *names: str) -> int:
-        for name in names:
-            gid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_GEOM, name)
-            if gid >= 0:
-                return gid
-        raise ValueError(f"None of geoms {names} found in model.")
-
     def _body_id(self, name: str) -> int:
         bid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, name)
         if bid < 0:
             raise ValueError(f"Body '{name}' not found in model.")
         return bid
 
-    def _tip_xy(self) -> np.ndarray:
-        return self.data.geom_xpos[self.pen_tip_gid, :2].copy()
-
-    def _slide_xy(self) -> np.ndarray:
-        return np.asarray(self.data.xpos[self.slide_bid, :2], dtype=np.float64).copy()
-
     def _trolley_xy(self) -> np.ndarray:
         return np.asarray(self.data.xpos[self.trolley_bid, :2], dtype=np.float64).copy()
 
-    def _ring_segment_geom_ids(self) -> list[int]:
-        ids: list[int] = []
-        for i in range(self.model.ngeom):
-            name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_GEOM, i) or ""
-            if name.startswith("Ring_collision_seg_"):
-                ids.append(i)
-        if not ids:
-            raise ValueError("No ring segment geoms named 'Ring_collision_seg_*' found.")
-        return ids
-
-    def _tip_ring_min_dist_xy(self, tip_xy: np.ndarray) -> float:
-        ring_xy = self.data.geom_xpos[self.ring_seg_gids][:, :2]
-        return float(np.min(np.linalg.norm(ring_xy - tip_xy, axis=1)))
-
-    def _ring_center_xy(self) -> np.ndarray:
-        return np.mean(self.data.geom_xpos[self.ring_seg_gids][:, :2], axis=0)
+    def _target_xy(self) -> np.ndarray:
+        r = self.circle_radius_m
+        return self.episode_center_xy + r * np.array(
+            [np.cos(self.phase), np.sin(self.phase)], dtype=np.float64
+        )
 
     def _obs(self) -> np.ndarray:
-        tip_xy = self._tip_xy()
-        slide_xy = self._slide_xy()
         trolley_xy = self._trolley_xy()
+        target_xy = self._target_xy()
         dt = self.model.opt.timestep * self.frame_skip
-        tip_vxy = (tip_xy - self.prev_tip_xy) / max(dt, 1e-8)
-        obs = np.array(
+        vel = (trolley_xy - self.prev_trolley_xy) / max(dt, 1e-8)
+        scale_r = max(self.circle_radius_m, 1e-6)
+        v_scale = 0.05
+        rel = (trolley_xy - self.episode_center_xy) / scale_r
+        err = (trolley_xy - target_xy) / scale_r
+        return np.array(
             [
-                tip_xy[0] - self.tip_xy_ref[0],
-                tip_xy[1] - self.tip_xy_ref[1],
-                tip_vxy[0],
-                tip_vxy[1],
-                slide_xy[0] - self.slide_xy_ref[0],
-                slide_xy[1] - self.slide_xy_ref[1],
-                trolley_xy[0] - self.trolley_xy_ref[0],
-                trolley_xy[1] - self.trolley_xy_ref[1],
+                rel[0],
+                rel[1],
+                vel[0] / v_scale,
+                vel[1] / v_scale,
+                np.cos(self.phase),
+                np.sin(self.phase),
+                err[0],
+                err[1],
             ],
             dtype=np.float32,
         )
-        return obs
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         super().reset(seed=seed)
         self.step_count = 0
-        self.ring_stuck_counter = 0
+        self.phase = 0.0
+        self.prev_action = np.zeros(2, dtype=np.float64)
         mujoco.mj_resetData(self.model, self.data)
-
-        for joint_name in ("Trolley_Revolute-15", "YBAll_Revolute-16"):
-            jid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_JOINT, joint_name)
-            if jid >= 0:
-                qadr = int(self.model.jnt_qposadr[jid])
-                self.data.qpos[qadr] += self.np_random.uniform(
-                    -self.reset_tilt_rad, self.reset_tilt_rad
-                )
-
+        self.data.qpos[self.slide_qpos_adr] = 0.0
+        self.data.qpos[self.trolley_qpos_adr] = 0.0
+        self.data.qvel[self.slide_dof_adr] = 0.0
+        self.data.qvel[self.trolley_dof_adr] = 0.0
         mujoco.mj_forward(self.model, self.data)
-        self.prev_tip_xy = self._tip_xy().copy()
-        self.ring_center_xy = self._ring_center_xy()
+
+        self.episode_center_xy = self._trolley_xy()
+        self.prev_trolley_xy = self.episode_center_xy.copy()
         return self._obs(), {}
 
     def step(self, action: np.ndarray):
@@ -217,100 +157,57 @@ class PenBalanceEnv(gym.Env[np.ndarray, np.ndarray]):
         dt = self.model.opt.timestep
         for _ in range(self.frame_skip):
             vx, vy = self.mix.to_linear_xy(motor_a, motor_b)
-
             slide = float(self.data.qpos[self.slide_qpos_adr]) + vy * dt
             trolley = float(self.data.qpos[self.trolley_qpos_adr]) + vx * dt
             slide = float(np.clip(slide, self.slide_min, self.slide_max))
             trolley = float(np.clip(trolley, self.trolley_min, self.trolley_max))
-
             self.data.qpos[self.slide_qpos_adr] = slide
             self.data.qpos[self.trolley_qpos_adr] = trolley
             self.data.qvel[self.slide_dof_adr] = vy
             self.data.qvel[self.trolley_dof_adr] = vx
             mujoco.mj_step(self.model, self.data)
 
-        tip_xy = self._tip_xy()
-        slide_xy = self._slide_xy()
-        trolley_xy = self._trolley_xy()
-
-        tip_err = tip_xy - self.tip_xy_ref
-        slide_err = slide_xy - self.slide_xy_ref
-        trolley_err = trolley_xy - self.trolley_xy_ref
-
-        dist_tip_xy = float(np.linalg.norm(tip_err))
-        dist_slide_xy = float(np.linalg.norm(slide_err))
-        dist_trolley_xy = float(np.linalg.norm(trolley_err))
-
         dt_step = dt * self.frame_skip
-        tip_vxy = (tip_xy - self.prev_tip_xy) / max(dt_step, 1e-8)
-        tip_speed_xy = float(np.linalg.norm(tip_vxy))
+        trolley_xy = self._trolley_xy()
+        target_xy = self._target_xy()
+        err_vec = trolley_xy - target_xy
+        dist_track = float(np.linalg.norm(err_vec))
+        delta_center = trolley_xy - self.episode_center_xy
+        r_actual = float(np.linalg.norm(delta_center))
+        radius_err = r_actual - self.circle_radius_m
 
-        ring_min_dist = self._tip_ring_min_dist_xy(tip_xy)
-        near_ring = ring_min_dist < self.ring_near_m
-        touching_ring = ring_min_dist < self.ring_touch_m
-        near_target = dist_tip_xy < self.target_near_m
+        denom = max(self.circle_radius_m**2, 1e-12)
+        reward = -self.track_reward_scale * float(np.dot(err_vec, err_vec)) / denom
+        reward -= self.radius_shaping_scale * (radius_err**2) / denom
 
-        dist_tip_sq = float(np.dot(tip_err, tip_err))
-        dist_slide_sq = float(np.dot(slide_err, slide_err))
-        dist_trolley_sq = float(np.dot(trolley_err, trolley_err))
+        da = action - self.prev_action
+        reward -= self.action_delta_penalty * float(np.dot(da, da))
+        self.prev_action = action.copy()
 
-        reward = (
-            self.reward_tip_scale * float(np.exp(-self.reward_tip_decay * dist_tip_sq))
-            + self.reward_slide_scale * float(np.exp(-self.reward_slide_decay * dist_slide_sq))
-            + self.reward_trolley_scale * float(np.exp(-self.reward_trolley_decay * dist_trolley_sq))
-        )
+        self.phase += self.circle_omega_rad_s * dt_step
+        self.phase = float(np.remainder(self.phase, 2.0 * np.pi))
 
-        all_at_origin = (
-            dist_tip_xy < self.origin_close_tip_m
-            and dist_slide_xy < self.origin_close_slide_m
-            and dist_trolley_xy < self.origin_close_trolley_m
-        )
-        if all_at_origin:
-            reward *= self.origin_all_close_amplify
+        track_ok = dist_track < self.success_track_m
+        radius_ok = abs(radius_err) < self.success_radius_m
+        step_success = bool(track_ok and radius_ok)
 
-        reward -= self.velocity_xy_penalty * tip_speed_xy
-
-        if near_target and not near_ring:
-            reward -= 0.03 * tip_speed_xy
-
-        ring_margin_penalty = max(0.0, self.ring_near_m - ring_min_dist)
-        reward -= 25.0 * ring_margin_penalty * ring_margin_penalty
-        if touching_ring:
-            reward -= 0.8
-
-        if near_ring and tip_speed_xy < self.stuck_speed_m_s:
-            self.ring_stuck_counter += 1
-        else:
-            self.ring_stuck_counter = 0
-        stuck_near_ring = self.ring_stuck_counter >= self.stuck_steps
-        if stuck_near_ring:
-            reward -= 1.5
-
-        self.prev_tip_xy = tip_xy.copy()
+        self.prev_trolley_xy = trolley_xy.copy()
         self.step_count += 1
         terminated = False
         truncated = bool(self.step_count >= self.max_steps)
 
-        ring_dx = float(tip_xy[0] - self.ring_center_xy[0])
-        ring_dy = float(tip_xy[1] - self.ring_center_xy[1])
-
         info = {
-            "tip_xy": tip_xy,
-            "slide_xy": slide_xy,
+            "tracking_error_m": dist_track,
+            "radius_error_m": abs(radius_err),
+            "target_xy": target_xy,
             "trolley_xy": trolley_xy,
-            "tip_xy_ref": self.tip_xy_ref,
-            "tip_dist": dist_tip_xy,
-            "slide_xy_dist": dist_slide_xy,
-            "trolley_xy_dist": dist_trolley_xy,
-            "tip_speed": tip_speed_xy,
-            "ring_dx": ring_dx,
-            "ring_dy": ring_dy,
-            "ring_min_dist": ring_min_dist,
-            "near_ring": near_ring,
-            "touching_ring": touching_ring,
-            "stuck_near_ring": stuck_near_ring,
-            "ring_stuck_counter": self.ring_stuck_counter,
-            "all_at_origin": all_at_origin,
+            "circle_radius_m": self.circle_radius_m,
+            "step_success": step_success,
+            "track_ok": track_ok,
+            "radius_ok": radius_ok,
         }
-        return self._obs(), reward, terminated, truncated, info
+        return self._obs(), float(reward), terminated, truncated, info
 
+
+# Backwards-compatible alias (previous task name).
+PenBalanceEnv = TrolleyCircleEnv

@@ -2,30 +2,32 @@ from __future__ import annotations
 
 import numpy as np
 
-from rl.pen_balance_env import PenBalanceEnv
+from rl.pen_balance_env import TrolleyCircleEnv
 
 
 def main() -> None:
-    env = PenBalanceEnv()
+    env = TrolleyCircleEnv()
     obs, _ = env.reset(seed=0)
     print("reset obs:", np.round(obs, 5))
     total = 0.0
+    successes = 0
     for i in range(100):
         action = env.action_space.sample()
         obs, reward, terminated, truncated, info = env.step(action)
         total += reward
+        if info.get("step_success"):
+            successes += 1
         if (i + 1) % 20 == 0:
-            tip_xy = np.asarray(info.get("tip_xy", [np.nan, np.nan]), dtype=np.float32)
             print(
-                f"step={i+1} reward={reward:.3f} tip_xy_dist={info['tip_dist']:.4f} "
-                f"speed={info['tip_speed']:.4f} "
-                f"tip_x={tip_xy[0]:.4f} tip_y={tip_xy[1]:.4f} "
-                f"origin={info.get('all_at_origin', False)}"
+                f"step={i+1} reward={reward:.4f} "
+                f"track_err_m={info['tracking_error_m']:.5f} "
+                f"radius_err_m={info['radius_error_m']:.5f} "
+                f"success={info['step_success']}"
             )
         if terminated or truncated:
             print("episode ended at step", i + 1, "terminated:", terminated, "truncated:", truncated)
             break
-    print("total_reward:", round(total, 3))
+    print("total_reward:", round(total, 3), "success_steps:", successes)
 
 
 if __name__ == "__main__":
