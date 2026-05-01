@@ -57,11 +57,12 @@ def main() -> None:
             time.sleep(dt)
 
             if terminated or truncated:
-                tip_xz = np.asarray(info.get("tip_xz", [np.nan, np.nan]), dtype=np.float32)
+                tip_xy = np.asarray(info.get("tip_xy", [np.nan, np.nan]), dtype=np.float32)
                 print(
                     f"episode={episode_idx} steps={episode_steps} "
-                    f"reward={episode_reward:.3f} tip_dist={info['tip_dist']:.4f} "
-                    f"tip_x={tip_xz[0]:.4f} tip_z={tip_xz[1]:.4f}"
+                    f"reward={episode_reward:.3f} tip_xy_dist={info['tip_dist']:.4f} "
+                    f"tip_x={tip_xy[0]:.4f} tip_y={tip_xy[1]:.4f} "
+                    f"origin={info.get('all_at_origin', False)}"
                 )
                 episode_idx += 1
                 if episode_idx > args.episodes:

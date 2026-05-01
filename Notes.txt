@@ -11,6 +11,13 @@ The system will be able get output feedback that is the XY coordinate of the Pen
 
 Lets start with a fairly simple/clean state and once that is working we will add in more real world behaviors for the model to train on.  Please ask questions if you need any clarification before starting to build this project.
 
+--------------- XY Promopt  ---------
+Modify the reward function in @rl/pen_balance_env.py as follows:
+Change to just measuring the XY coordinates of the pen tip (remove Z all together) 
+Reward should be high when the pen tip if close to the XY it's initial origin shown in @PModel/PModel.urdf  as the PenTip Origin
+There should also be a reward when the Trolley and Slidue are close to their xy origin locations that are in @PModel/PModel.urdf 
+When all elements are close to their origin (pen, slide, trolley) the reward should be amplified as that is the state we are aiming for
+----------------------------------
 
 Commands:
 tensorboard --logdir runs/ppo_pen_balance
