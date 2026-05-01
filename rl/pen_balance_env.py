@@ -33,7 +33,6 @@ class PenBalanceEnv(gym.Env[np.ndarray, np.ndarray]):
         frame_skip: int = 5,
         max_motor_speed_rad_s: float = 14.0,
         max_steps: int = 600,
-        fail_radius_m: float = 0.20,
         reset_tilt_rad: float = 0.10,
         ring_near_m: float = 0.015,
         ring_touch_m: float = 0.010,
@@ -59,7 +58,6 @@ class PenBalanceEnv(gym.Env[np.ndarray, np.ndarray]):
         self.frame_skip = frame_skip
         self.max_motor_speed_rad_s = max_motor_speed_rad_s
         self.max_steps = max_steps
-        self.fail_radius_m = fail_radius_m
         self.reset_tilt_rad = reset_tilt_rad
         self.ring_near_m = ring_near_m
         self.ring_touch_m = ring_touch_m
@@ -290,7 +288,7 @@ class PenBalanceEnv(gym.Env[np.ndarray, np.ndarray]):
 
         self.prev_tip_xy = tip_xy.copy()
         self.step_count += 1
-        terminated = bool(dist_tip_xy > self.fail_radius_m)
+        terminated = False
         truncated = bool(self.step_count >= self.max_steps)
 
         ring_dx = float(tip_xy[0] - self.ring_center_xy[0])
@@ -299,6 +297,7 @@ class PenBalanceEnv(gym.Env[np.ndarray, np.ndarray]):
         info = {
             "tip_xy": tip_xy,
             "slide_xy": slide_xy,
+            "trolley_xy": trolley_xy,
             "tip_xy_ref": self.tip_xy_ref,
             "tip_dist": dist_tip_xy,
             "slide_xy_dist": dist_slide_xy,

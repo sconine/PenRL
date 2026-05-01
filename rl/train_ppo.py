@@ -28,6 +28,9 @@ class RingMetricsCallback(BaseCallback):
         self._slide_x: list[float] = []
         self._slide_y: list[float] = []
         self._slide_dist: list[float] = []
+        self._trolley_x: list[float] = []
+        self._trolley_y: list[float] = []
+        self._trolley_dist: list[float] = []
 
     def _on_step(self) -> bool:
         infos = self.locals.get("infos", [])
@@ -51,6 +54,13 @@ class RingMetricsCallback(BaseCallback):
                     self._slide_x.append(float(slide_xy[0]))
                     self._slide_y.append(float(slide_xy[1]))
                     self._slide_dist.append(float(info["slide_xy_dist"]))
+            trolley_xy = info.get("trolley_xy")
+            if trolley_xy is not None and "trolley_xy_dist" in info:
+                trolley_xy = np.asarray(trolley_xy, dtype=np.float64).reshape(-1)
+                if trolley_xy.size >= 2:
+                    self._trolley_x.append(float(trolley_xy[0]))
+                    self._trolley_y.append(float(trolley_xy[1]))
+                    self._trolley_dist.append(float(info["trolley_xy_dist"]))
         return True
 
     def _on_rollout_end(self) -> None:
@@ -67,6 +77,10 @@ class RingMetricsCallback(BaseCallback):
             self.logger.record("slide/x_mean", float(np.mean(self._slide_x)))
             self.logger.record("slide/y_mean", float(np.mean(self._slide_y)))
             self.logger.record("slide/dist_mean", float(np.mean(self._slide_dist)))
+        if self._trolley_x:
+            self.logger.record("trolley/x_mean", float(np.mean(self._trolley_x)))
+            self.logger.record("trolley/y_mean", float(np.mean(self._trolley_y)))
+            self.logger.record("trolley/dist_mean", float(np.mean(self._trolley_dist)))
         self._ring_min_dist.clear()
         self._near_ring.clear()
         self._touching_ring.clear()
@@ -77,6 +91,9 @@ class RingMetricsCallback(BaseCallback):
         self._slide_x.clear()
         self._slide_y.clear()
         self._slide_dist.clear()
+        self._trolley_x.clear()
+        self._trolley_y.clear()
+        self._trolley_dist.clear()
 
 
 def main() -> None:
